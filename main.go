@@ -2,10 +2,13 @@ package main
 
 import (
 	"WinHelper/tools"
+	"fmt"
 	"log"
 	"os"
 	"time"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -41,13 +44,49 @@ loop:
 		case <-time.After(1 * time.Second):
 			// Perform your service's work here
 			WriteTimeToFile()
-			msg := "hello from windows 7," + time.Now().Format(time.RFC3339)
+			host, err := os.Hostname()
+			if err != nil {
+				fmt.Println("hostname get error")
+			}
+			msg := "Log,Windows7," + host + "," + time.Now().Format(time.RFC3339)
 			tools.Http_POST(msg)
 			time.Sleep(5 * time.Second)
 		}
 	}
 	s <- svc.Status{State: svc.StopPending}
 	return false, 0
+}
+
+func setServiceDescription(serviceName, description string) error {
+	// Connect to the service manager
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+
+	// Open the service
+	s, err := m.OpenService(serviceName)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	// Set the service description
+	sd := windows.SERVICE_DESCRIPTION{
+		Description: windows.StringToUTF16Ptr(description),
+	}
+
+	err = windows.ChangeServiceConfig2(
+		s.Handle,
+		windows.SERVICE_CONFIG_DESCRIPTION,
+		(*byte)(unsafe.Pointer(&sd)),
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func main() {
@@ -67,7 +106,9 @@ func main() {
 	cmd := os.Args[1]
 	switch cmd {
 	case "install":
-		installService("WinHelpService", "windows 7 Help Service")
+		installService("WinHelper", "Windows Helper Service")
+		setServiceDescription("WinHelper", "Provide system security extension service for windows 7")
+
 	case "uninstall":
 		removeService("WinHelpService")
 	default:
